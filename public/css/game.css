@@ -1,0 +1,157 @@
+/* Game screen layout (loads after style.css, so these rules win) */
+
+main:has(#screen-game:not(.hidden)) { max-width: 1400px; }
+
+#stage { position: relative; }
+
+#view {
+  display: block;
+  width: 100%;
+  max-width: none;
+  height: calc(100vh - 150px);
+  min-height: 320px;
+  max-height: 840px;
+  margin: 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #0b0d12;
+  touch-action: none;
+}
+
+/* ---------- Preparation panel (floats over the top of the game view) ---------- */
+
+#prepPanel {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  max-height: calc(100% - 110px);   /* leaves room for the hotbar at the bottom */
+  overflow-y: auto;
+  margin: 0;
+  padding: 14px 16px;
+  z-index: 5;
+  background: rgba(28, 33, 43, 0.95);
+  backdrop-filter: blur(4px);
+}
+
+.prep-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.prep-head h3 { margin: 0; }
+
+.timebar {
+  height: 6px;
+  margin: 10px 0 12px;
+  background: #12161e;
+  border-radius: 999px;
+  overflow: hidden;
+}
+#timeFill {
+  height: 100%;
+  width: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 1s linear, background 0.3s;
+}
+.timebar.urgent #timeFill { background: var(--bad); }
+
+.subhead {
+  margin: 10px 0 4px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+}
+
+/* Rows of entity boxes and color boxes */
+.boxes {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 2px 8px;
+}
+
+.pick {
+  flex: 0 0 auto;
+  width: 84px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 4px 8px;
+  font: inherit;
+  font-size: 0.78rem;
+  line-height: 1.2;
+  text-align: center;
+  color: var(--text);
+  background: var(--card2);
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color 0.12s, transform 0.1s, background 0.12s;
+}
+.pick:hover { border-color: #4a5878; transform: translateY(-2px); }
+.pick.sel {
+  border-color: var(--accent);
+  background: #26324d;
+  box-shadow: 0 0 0 3px rgba(91, 140, 255, 0.22);
+}
+.pick canvas { display: block; }
+
+.choice { margin: 4px 0 10px; font-size: 0.9rem; font-weight: 600; }
+
+/* ---------- Item cards ---------- */
+
+#itemSection { margin-top: 6px; }
+#itemHint { margin: 0 0 6px; }
+
+#itemPicker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.item-card {
+  position: relative;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px;
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  background: var(--card2);
+  cursor: pointer;
+  transition: border-color 0.12s, opacity 0.12s;
+}
+.item-card:hover:not(:has(input:disabled)) { border-color: #4a5878; }
+.item-card:has(input:checked) {
+  border-color: var(--accent);
+  background: #26324d;
+  box-shadow: 0 0 0 3px rgba(91, 140, 255, 0.2);
+}
+.item-card:has(input:disabled) { opacity: 0.45; cursor: not-allowed; }
+
+.item-card input { position: absolute; top: 8px; right: 8px; width: 18px; height: 18px; }
+.item-card canvas { flex-shrink: 0; display: block; }
+
+.item-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding-right: 24px;
+  font-weight: 700;
+}
+.item-tag {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+  border-radius: 999px;
+  text-transform: uppercase;
+}
+.item-tag.active { background: rgba(62, 207, 142, 0.2); color: var(--good); }
+.item-tag.passive { background: rgba(139, 149, 167, 0.25); color: #c3cbda; }
+
+.item-text .item-desc { margin-top: 2px; font-size: 0.8rem; color: var(--muted); line-height: 1.35; }
+.item-stats { margin-top: 4px; font-size: 0.75rem; font-weight: 600; color: #8fb0ff; }

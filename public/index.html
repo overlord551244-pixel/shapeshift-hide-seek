@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shapeshift Hide &amp; Seek</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/game.css">
+</head>
+<body>
+  <div id="toasts"></div>
+
+  <main>
+
+    <!-- ============ MENU ============ -->
+    <section id="screen-menu" class="screen">
+      <div class="hero">
+        <h1>Shapeshift<br>Hide &amp; Seek</h1>
+        <p class="tagline">Blend in with the crowd. Don't get shot.</p>
+      </div>
+
+      <div class="card menu-card">
+        <label class="field">
+          <span>Your name</span>
+          <input id="nameInput" type="text" maxlength="16" placeholder="Enter a name" autocomplete="off">
+        </label>
+        <button id="createBtn" class="btn primary big">Create lobby</button>
+
+        <div class="divider"><span>or join a friend</span></div>
+
+        <div class="join-row">
+          <input id="codeInput" type="text" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false">
+          <button id="joinBtn" class="btn big">Join</button>
+        </div>
+      </div>
+
+      <div class="card how">
+        <h3>How to play</h3>
+        <ul>
+          <li><b>Hiders</b> get a short prep time to shapeshift into any person or animal on the map, and pick a color. Then you're stuck with it.</li>
+          <li>The map is full of <b>NPCs</b> that look just like you. Walk, stop, and blend in.</li>
+          <li>The <b>seeker</b> has a gun. Shooting a hider catches them, but shooting an NPC costs a heart.</li>
+          <li>Hiders win if time runs out or the seeker loses all their hearts. The seeker wins by catching everyone.</li>
+          <li>Everyone can use items. Check them out during prep!</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============ LOBBY ============ -->
+    <section id="screen-lobby" class="screen hidden">
+      <div id="resultBanner" class="banner hidden"></div>
+
+      <header class="lobby-head">
+        <div>
+          <div class="muted small">Lobby code</div>
+          <div class="code-row">
+            <span id="lobbyCode" class="big-code"></span>
+            <button id="copyLinkBtn" class="btn small">Copy invite link</button>
+          </div>
+        </div>
+        <button id="leaveBtn" class="btn ghost">Leave</button>
+      </header>
+
+      <div class="lobby-grid">
+        <div class="col">
+          <div class="card">
+            <h3>Players <span id="playerCount" class="muted"></span></h3>
+            <ul id="players" class="players"></ul>
+          </div>
+          <div class="card">
+            <h3>Map</h3>
+            <div id="maps" class="maps"></div>
+          </div>
+        </div>
+
+        <div class="col">
+          <div class="card">
+            <h3>Game settings</h3>
+            <p id="hostNote" class="muted small"></p>
+            <div id="settings"></div>
+          </div>
+        </div>
+      </div>
+
+      <footer class="start-bar">
+        <p id="startHint" class="muted"></p>
+        <button id="startBtn" class="btn primary big hidden">Start game</button>
+      </footer>
+    </section>
+
+    <!-- ============ GAME ============ -->
+    <section id="screen-game" class="screen hidden">
+      <div class="game-bar">
+        <div class="who">
+          <span id="roleBadge" class="badge"></span>
+          <span id="mapName" class="muted"></span>
+        </div>
+        <div class="timer"><span id="phase" class="muted"></span> <b id="timer">0:00</b></div>
+        <button id="leaveGameBtn" class="btn small ghost">Leave</button>
+      </div>
+
+      <div id="stage">
+        <canvas id="view" width="800" height="500"></canvas>
+
+        <div id="prepPanel" class="card">
+          <div class="prep-head">
+            <h3 id="prepTitle">Preparation</h3>
+            <button id="collapseBtn" type="button" class="btn small">Hide</button>
+          </div>
+          <div class="timebar"><div id="timeFill"></div></div>
+
+          <div id="prepBody">
+            <p id="prepHint" class="muted small"></p>
+
+            <div id="entityBox">
+              <div class="subhead">1. Pick what to turn into</div>
+              <div id="entityPicker" class="boxes"></div>
+              <div id="colorLabel" class="subhead hidden">2. Pick a color</div>
+              <div id="colorPicker" class="boxes"></div>
+              <p id="choiceText" class="choice"></p>
+            </div>
+
+            <div id="itemSection">
+              <div class="subhead">Items <span class="muted">(<span id="slotUsed">0</span> of <span id="slotCount">0</span> picked)</span></div>
+              <p id="itemHint" class="muted small"></p>
+              <div id="itemPicker"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p id="finalText" class="final"></p>
+    </section>
+
+  </main>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/net.js"></script>
+  <script src="/js/lobby.js"></script>
+  <script src="/js/sprites.js"></script>
+  <script src="/js/icons.js"></script>
+  <script src="/js/roundui.js"></script>
+  <script src="/js/maprender.js"></script>
+  <script src="/js/effects.js"></script>
+  <script src="/js/game.js"></script>
+</body>
+</html>
