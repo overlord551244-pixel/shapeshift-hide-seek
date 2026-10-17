@@ -3,7 +3,7 @@
 const DEFAULT_SETTINGS = {
   // Round timing (seconds)
   prepTime: 20,
-  roundTime: 180,
+  roundTime: 300,               // 5 minutes
 
   // Players
   seekerCount: 1,
@@ -34,8 +34,10 @@ const SEEKER_ITEMS = {
   enhancedEyes:   { type: 'passive', fovBonus: 1.8 },
   radarScanner:   { type: 'active', duration: 30, cooldown: 20 },
   invisibilityCloak: { type: 'active', duration: 12, cooldown: 10 },
-  compass:        { type: 'active', duration: 3, cooldown: 16 },
-  beartrap:       { type: 'active', cooldown: 12, maxPlaced: 8, stuckTime: 4, color: '#c2c2c2', hiderOpacity: 0.05 }
+  compass:        { type: 'active', duration: 2.2, cooldown: 16 },
+  beartrap:       { type: 'active', cooldown: 12, maxPlaced: 8, stuckTime: 4, color: '#c2c2c2', hiderOpacity: 0.05 },
+  confusionRay:   { type: 'active', cooldown: 30, effectTime: 12 },   // effectTime = how long each effect lasts on a hider
+  blindness:      { type: 'active', duration: 10, cooldown: 40 }      // hits every hider on the map
 };
 
 // Hider items
