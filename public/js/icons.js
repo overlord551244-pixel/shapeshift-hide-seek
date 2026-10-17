@@ -29,12 +29,22 @@ const Icons = (function () {
     compass: {
       name: 'Compass', type: 'active',
       text: 'A compass appears over you and points toward the nearest hider.',
-      stats: 'Lasts 3.5s \u00B7 Cooldown 16s'
+      stats: 'Lasts 2.2s \u00B7 Cooldown 16s'
     },
     beartrap: {
       name: 'Beartrap', type: 'active',
       text: 'Place a trap. A hider who steps on it is stuck for 4s and you get an arrow to them. NPCs never trigger it.',
       stats: 'Place every 12s \u00B7 Max 8 on the map'
+    },
+    confusionRay: {
+      name: 'Confusion Ray', type: 'active',
+      text: 'Fires a wide pulse around you. Each hider caught in it gets one random effect: inverted controls, an upside-down screen, or scrambled colors.',
+      stats: 'Effects last 12s \u00B7 Cooldown 30s'
+    },
+    blindness: {
+      name: 'Blindness', type: 'active',
+      text: 'Every hider on the map goes nearly blind. Their screen turns black except for a small circle around them.',
+      stats: 'Lasts 10s \u00B7 Cooldown 40s'
     },
     slingshot: {
       name: 'Slingshot', type: 'active',
@@ -44,7 +54,7 @@ const Icons = (function () {
     smokeBomb: {
       name: 'Smoke Bomb', type: 'active',
       text: 'Release a big cloud of smoke around yourself.',
-      stats: 'Lasts 7s \u00B7 Cooldown 26s'
+      stats: 'Lasts 9s \u00B7 Cooldown 26s'
     },
     inkBomb: {
       name: 'Ink Bomb', type: 'active',
@@ -200,6 +210,49 @@ const Icons = (function () {
       }
       g.stroke();
       circle(g, 0, 2, 2.6, '#4b4f58');
+    },
+
+    // A purple spiral with a few sparks
+    confusionRay(g) {
+      g.strokeStyle = '#8e44ad';
+      g.lineWidth = 2.6;
+      g.beginPath();
+      for (let i = 0; i <= 60; i++) {
+        const t = i / 60;
+        const a = t * Math.PI * 5;
+        const r = 2 + t * 12;
+        const x = Math.cos(a) * r;
+        const y = Math.sin(a) * r;
+        if (i === 0) g.moveTo(x, y);
+        else g.lineTo(x, y);
+      }
+      g.stroke();
+      circle(g, 11, -11, 1.9, '#f2c94c');
+      circle(g, -12, 10, 1.9, '#f2c94c');
+      circle(g, 12, 10, 1.4, '#f2c94c');
+      circle(g, -11, -10, 1.4, '#f2c94c');
+    },
+
+    // A dark eye with a red slash through it
+    blindness(g) {
+      g.fillStyle = '#2b2f3a';
+      g.strokeStyle = '#111111';
+      g.lineWidth = 2;
+      g.beginPath();
+      g.moveTo(-15, 0);
+      g.quadraticCurveTo(0, -14, 15, 0);
+      g.quadraticCurveTo(0, 14, -15, 0);
+      g.closePath();
+      g.fill();
+      g.stroke();
+      circle(g, 0, 0, 5, '#6b7280');
+      circle(g, 0, 0, 2.4, '#111111');
+      g.strokeStyle = '#e5533d';
+      g.lineWidth = 3;
+      g.beginPath();
+      g.moveTo(-12, 12);
+      g.lineTo(12, -12);
+      g.stroke();
     },
 
     slingshot(g) {
