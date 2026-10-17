@@ -50,7 +50,7 @@ function createWorld(lobby) {
     lobby, round: r, mapKey: lobby.map,
     usedIds: new Set(), npcs: [], players: new Map(),
     bullets: [], bulletCounter: 0,
-    radars: [], traps: [], cans: [], rocks: [], smokes: [], idc: 0,
+    radars: [], traps: [], cans: [], rocks: [], smokes: [], rays: [], idc: 0,
     last: Date.now(), sendAcc: 0
   };
 
@@ -89,7 +89,8 @@ function addPlayer(w, sid, role) {
     input: { up: false, down: false, left: false, right: false, sprint: false },
     frozenUntil: 0,                      // stun and beartrap use this
     lastShot: 0,
-    itemState: {}
+    itemState: {},
+    confusion: null                      // set by a seeker's Confusion Ray
   });
 }
 
@@ -159,6 +160,12 @@ function stepPlayer(w, p, dt, now) {
   let ix = (p.input.right ? 1 : 0) - (p.input.left ? 1 : 0);
   let iy = (p.input.down ? 1 : 0) - (p.input.up ? 1 : 0);
   if (!ix && !iy) return;
+
+  // Confusion Ray: left becomes right, up becomes down, and so on
+  if (items.inverted(p, now)) {
+    ix = -ix;
+    iy = -iy;
+  }
 
   const len = Math.hypot(ix, iy);   // keeps diagonal movement from being faster
   ix /= len;
