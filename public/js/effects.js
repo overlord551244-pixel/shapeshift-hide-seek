@@ -8,6 +8,14 @@ const Effects = (function () {
   let trapTotal = 4000;
   const parts = [];
 
+  // Smoke tuning: raise SMOKE_PUFF_ALPHA for thicker smoke, lower it for thinner
+  const SMOKE_PUFF_ALPHA = 0.3;
+  const SMOKE_SPACING = 52;
+  const smokeCache = new Map();
+
+  // Blindness: the part of the screen a blinded hider can still see (0.05 = 5%)
+  const BLIND_VISIBLE_FRACTION = 0.05;
+
   function rnd(seed) {
     const x = Math.sin(seed * 12.9898) * 43758.5453;
     return x - Math.floor(x);
@@ -29,6 +37,7 @@ const Effects = (function () {
     trapUntil = 0;
     inkBlobs = [];
     parts.length = 0;
+    smokeCache.clear();
   }
 
   function ink(seconds) {
@@ -79,6 +88,97 @@ const Effects = (function () {
       ctx.fillStyle = 'rgba(205,205,210,' + (0.8 * (1 - k)) + ')';
       ctx.fill();
     }
+  }
+
+  // ---------- Confusion Ray: scrambled colors ----------
+  // Wraps the game's drawing surface. Every color the game draws with gets swapped
+  // for a random one. Black and white are left alone so shadows and outlines still read.
+
+  const COLOR_RE = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)$/;
+
+  function parseColor(css) {
+    if (css.charAt(0) === '#') {
+      let h = css.slice(1);
+      if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+      if (h.length !== 6) return null;
+      const n = parseInt(h, 16);
+      if (isNaN(n)) return null;
+      return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255, a: 1 };
+    }
+    const m = COLOR_RE.exec(css);
+    if (!m) return null;
+    return { r: +m[1], g: +m[2], b: +m[3], a: m[4] === undefined ? 1 : +m[4] };
+  }
+
+  function hrand(h, k) {
+    const x = Math.sin(h * 12.9898 + k * 78.233) * 43758.5453;
+    return x - Math.floor(x);
+  }
+
+  function hslToRgb(h, s, l) {
+    const c = (1 - Math.abs(2 * l - 1)) * s;
+    const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+    const m = l - c / 2;
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    if (h < 60) { r = c; g = x; }
+    else if (h < 120) { r = x; g = c; }
+    else if (h < 180) { g = c; b = x; }
+    else if (h < 240) { g = x; b = c; }
+    else if (h < 300) { r = x; b = c; }
+    else { r = c; b = x; }
+    return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
+  }
+
+  function scramble(c, seed, salt) {
+    const l = (Math.max(c.r, c.g, c.b) + Math.min(c.r, c.g, c.b)) / 510;
+    if (l < 0.12 || l > 0.94) return [c.r, c.g, c.b];
+    const h = c.r * 961 + c.g * 31 + c.b + salt * 7919 + seed * 13;
+    const light = Math.min(0.82, Math.max(0.18, l + (hrand(h, 3) - 0.5) * 0.3));
+    return hslToRgb(hrand(h, 1) * 360, 0.5 + hrand(h, 2) * 0.45, light);
+  }
+
+  // Returns { ctx, seed, setSalt }. Draw with "ctx"; call setSalt(id) before drawing something
+  // so that thing gets its own random colors (use 0 for the background and scenery).
+  function recolor(real, seed) {
+    let salt = 0;
+    const cache = new Map();
+    const bound = new Map();
+
+    function map(css) {
+      const c = parseColor(css);
+      if (!c) return css;
+      const key = salt + ':' + c.r + ',' + c.g + ',' + c.b;
+      let rgb = cache.get(key);
+      if (!rgb) {
+        rgb = scramble(c, seed, salt);
+        cache.set(key, rgb);
+      }
+      return c.a >= 1
+        ? 'rgb(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ')'
+        : 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',' + c.a + ')';
+    }
+
+    const proxy = new Proxy(real, {
+      get(target, prop) {
+        const v = target[prop];
+        if (typeof v !== 'function') return v;
+        let f = bound.get(prop);
+        if (!f) {
+          f = v.bind(target);
+          bound.set(prop, f);
+        }
+        return f;
+      },
+      set(target, prop, value) {
+        if ((prop === 'fillStyle' || prop === 'strokeStyle') && typeof value === 'string') value = map(value);
+        target[prop] = value;
+        return true;
+      }
+    });
+
+    return { ctx: proxy, seed: seed, setSalt: function (n) { salt = n; } };
   }
 
   // ---------- World layer: things on the ground ----------
@@ -160,27 +260,70 @@ const Effects = (function () {
     for (const rd of state.radars || []) drawRadar(ctx, rd, now);
   }
 
-  // ---------- World layer: things in the air ----------
+  // ---------- World layer: smoke ----------
 
-  // Each smoke puff fades in more and more, then fades out
+  // Builds the puffs for one smoke cloud once, then reuses them every frame.
+  // They sit on a tight overlapping grid inside the radius, so no gaps are left.
+  function smokePuffs(sm) {
+    let list = smokeCache.get(sm.id);
+    if (list) return list;
+    list = [];
+    const R = sm.r * 0.92;
+    const S = SMOKE_SPACING;
+    const rows = Math.ceil(R / (S * 0.866)) + 1;
+    const cols = Math.ceil(R / S) + 2;
+    for (let layer = 0; layer < 2; layer++) {
+      for (let row = -rows; row <= rows; row++) {
+        const y0 = row * S * 0.866;
+        const off = ((row & 1) ? S / 2 : 0) + layer * (S / 2);
+        for (let col = -cols; col <= cols; col++) {
+          const seed = sm.id * 977 + layer * 311 + row * 53 + col * 7;
+          const x = col * S + off + (rnd(seed + 1) - 0.5) * S * 0.7;
+          const y = y0 + (rnd(seed + 2) - 0.5) * S * 0.7;
+          if (Math.hypot(x, y) > R) continue;
+          const appear = rnd(seed + 3) * 0.2;           // when it starts to appear
+          const fadeStart = 0.78 + rnd(seed + 4) * 0.1; // when it starts to disappear
+          list.push({
+            x: x, y: y,
+            rad: 46 + rnd(seed + 5) * 26,
+            gray: 138 + Math.floor(rnd(seed + 6) * 36),
+            appear: appear,
+            gone: fadeStart + 0.12,
+            ph: rnd(seed + 7) * 6.28
+          });
+        }
+      }
+    }
+    smokeCache.set(sm.id, list);
+    return list;
+  }
+
+  // Each puff fades in more and more, stays, then fades out less and less
   function drawSmoke(ctx, sm, age) {
     const t = Math.min(1, age / sm.life);
-    for (let i = 0; i < 36; i++) {
-      const base = sm.id * 131 + i * 7;
-      const start = rnd(base + 1) * 0.35;
-      const end = 0.65 + rnd(base + 2) * 0.35;
-      if (t <= start || t >= end) continue;
-      const a = Math.min(1, (t - start) / 0.12, (end - t) / 0.12);
-      const ang = rnd(base + 3) * Math.PI * 2;
-      const dist = Math.sqrt(rnd(base + 4)) * sm.r * 0.75;
-      const px = sm.x + Math.cos(ang) * dist + Math.sin(age * 0.6 + i) * 6;
-      const py = sm.y + Math.sin(ang) * dist + Math.cos(age * 0.5 + i) * 6;
+    const puffs = smokePuffs(sm);
+    for (let i = 0; i < puffs.length; i++) {
+      const p = puffs[i];
+      const a = Math.min((t - p.appear) / 0.1, (p.gone - t) / 0.12, 1);
+      if (a <= 0) continue;
+      const px = sm.x + p.x + Math.sin(age * 0.6 + p.ph) * 6;
+      const py = sm.y + p.y + Math.cos(age * 0.5 + p.ph) * 6;
+      const g = p.gray;
+
+      ctx.fillStyle = 'rgba(' + g + ',' + g + ',' + g + ',' + (a * SMOKE_PUFF_ALPHA).toFixed(3) + ')';
       ctx.beginPath();
-      ctx.arc(px, py, 28 + rnd(base + 5) * 26, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(150,150,150,' + (a * 0.5) + ')';
+      ctx.arc(px, py, p.rad, 0, Math.PI * 2);
+      ctx.fill();
+
+      const l = g + 22;
+      ctx.fillStyle = 'rgba(' + l + ',' + l + ',' + l + ',' + (a * SMOKE_PUFF_ALPHA * 0.6).toFixed(3) + ')';
+      ctx.beginPath();
+      ctx.arc(px, py, p.rad * 0.6, 0, Math.PI * 2);
       ctx.fill();
     }
   }
+
+  // ---------- World layer: things in the air ----------
 
   function drawCompass(ctx, x, y, angle) {
     ctx.beginPath();
@@ -226,6 +369,24 @@ const Effects = (function () {
     ctx.stroke();
   }
 
+  // The purple pulse that spreads out when the seeker fires the Confusion Ray
+  function drawRay(ctx, ry, age) {
+    const k = Math.min(1, age / 0.9);
+    const fade = 1 - k;
+    ctx.beginPath();
+    ctx.arc(ry.x, ry.y, ry.r * k, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(155,89,182,' + (0.2 * fade).toFixed(3) + ')';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(190,120,230,' + (0.9 * fade).toFixed(3) + ')';
+    ctx.lineWidth = 6;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(ry.x, ry.y, ry.r * k * 0.7, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(220,170,255,' + (0.6 * fade).toFixed(3) + ')';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  }
+
   function over(ctx, state, age, info, ref, now) {
     for (const b of state.bullets || []) {
       const bx = b.x + Math.cos(b.a) * info.bulletSpeed * age;
@@ -251,7 +412,12 @@ const Effects = (function () {
       ctx.lineWidth = 1;
       ctx.stroke();
     }
+
+    if (smokeCache.size > 30) smokeCache.clear();   // old clouds; they are rebuilt identically if needed
     for (const sm of state.smokes || []) drawSmoke(ctx, sm, sm.age + age);
+
+    for (const ry of state.rays || []) drawRay(ctx, ry, ry.age + age);
+
     if (state.compass && ref) drawCompass(ctx, ref.x, ref.y, state.compass.angle);
 
     // Shimmering ring while the cloak is active
@@ -484,11 +650,32 @@ const Effects = (function () {
     }
   }
 
-  // Everything drawn on top of the world, in screen coordinates
-  function screen(ctx, state, vw, vh, now, cam, mouse) {
+  // Blindness: the whole screen goes black except a small circle around the hider.
+  // "center" is where the hider's character is on the screen.
+  function drawBlind(ctx, blind, vw, vh, center) {
+    const cx = center ? center.x : vw / 2;
+    const cy = center ? center.y : vh / 2;
+    const r = Math.sqrt((BLIND_VISIBLE_FRACTION * vw * vh) / Math.PI);
+
+    // fades in quickly and fades out at the end
+    const a = Math.max(0, Math.min(1, (blind.total - blind.left) / 0.25, blind.left / 0.4));
+
+    const g = ctx.createRadialGradient(cx, cy, r * 0.82, cx, cy, r);
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(1, 'rgba(0,0,0,' + a.toFixed(3) + ')');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, vw, vh);
+  }
+
+  // Everything drawn on top of the world, in screen coordinates.
+  // "center" is where the player's own character is on the screen.
+  function screen(ctx, state, vw, vh, now, cam, mouse, center) {
     if (state.role === 'seeker' && state.alive && cam) {
       for (const a of state.trapAlerts || []) trapAlert(ctx, a, vw, vh, cam);
     }
+
+    if (state.blind) drawBlind(ctx, state.blind, vw, vh, center);
+
     hotbar(ctx, state, vw, vh, mouse);
     drawInk(ctx, vw, vh, now);
 
@@ -514,7 +701,32 @@ const Effects = (function () {
       ctx.fillStyle = '#ff6b6b';
       ctx.fillRect(x, 100, w * Math.max(0, left / (trapTotal / 1000)), 8);
     }
+
+    // A hider hit by the Confusion Ray sees which effect they have
+    if (state.confusion) {
+      const c = state.confusion;
+      const what = c.type === 'invert' ? 'Your controls are inverted!'
+        : c.type === 'flip' ? 'Your screen is upside down!'
+        : 'Your colors are scrambled!';
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 20px sans-serif';
+      ctx.fillStyle = '#d58cff';
+      ctx.fillText('CONFUSED! ' + what, vw / 2, 130);
+      ctx.font = 'bold 14px sans-serif';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(c.left.toFixed(1) + 's', vw / 2, 150);
+      ctx.textAlign = 'left';
+    }
+
+    // A hider hit by Blindness sees a countdown (drawn over the black)
+    if (state.blind) {
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 20px sans-serif';
+      ctx.fillStyle = '#ff9a9a';
+      ctx.fillText('BLINDED! ' + state.blind.left.toFixed(1) + 's', vw / 2, 190);
+      ctx.textAlign = 'left';
+    }
   }
 
-  return { reset, ink, stun, trap, burst, under, over, slotAt, hotbar, screen };
+  return { reset, ink, stun, trap, burst, recolor, under, over, slotAt, hotbar, screen };
 })();
