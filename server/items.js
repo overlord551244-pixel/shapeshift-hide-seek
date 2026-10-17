@@ -4,15 +4,19 @@ const { SEEKER_ITEMS, HIDER_ITEMS } = require('./config');
 
 // Extra numbers for the items (the main ones live in config.js)
 const T = {
-  radarRadius: 396,     // 80% bigger than before (was 220)
+  radarRadius: 396,     // 80% bigger than the original 220
   trapRadius: 18,
   slingRange: 450,
   slingSpeed: 520,
   slingHit: 16,
-  smokeRadius: 234,     // 80% bigger than before (was 130)
+  smokeRadius: 234,     // 80% bigger than the original 130
   inkRadius: 18,
   inkPlaceCooldown: 2
 };
+// The Confusion Ray reaches 40% farther than the radar scanner
+T.confusionRadius = Math.round(T.radarRadius * 1.4);
+
+const CONFUSION_TYPES = ['invert', 'flip', 'colors'];
 
 let io = null;
 function init(socketServer) { io = socketServer; }
@@ -35,6 +39,11 @@ function cloaked(p, now) {
 
 function holdingSling(p) {
   return p.role === 'hider' && !!(p.itemState && p.itemState.slingshot && p.itemState.slingshot.holding);
+}
+
+// True while a hider's controls are flipped by the Confusion Ray
+function inverted(p, now) {
+  return !!(p.confusion && p.confusion.type === 'invert' && now < p.confusion.until);
 }
 
 // Keeps at most "max" things per owner. The oldest one despawns first.
@@ -91,6 +100,33 @@ function useItem(socketId, index) {
       st.readyAt = now + cfg.cooldown * 1000;
       limitOwned(w.traps, socketId, cfg.maxPlaced);
       w.traps.push({ id: ++w.idc, x: p.x, y: p.y, owner: socketId, victim: null, releaseAt: 0 });
+      return;
+    }
+    case 'confusionRay': {
+      if (now < st.readyAt) return;
+      st.readyAt = now + cfg.cooldown * 1000;
+      if (!w.rays) w.rays = [];
+      w.rays.push({ id: ++w.idc, x: p.x, y: p.y, owner: socketId, born: now });
+      // Every hider in range gets one of the three effects, picked at random
+      for (const h of w.players.values()) {
+        if (h.role !== 'hider' || !h.spawned || !r.hiders.has(h.sid)) continue;
+        if (Math.hypot(h.x - p.x, h.y - p.y) > T.confusionRadius) continue;
+        h.confusion = {
+          type: CONFUSION_TYPES[Math.floor(Math.random() * CONFUSION_TYPES.length)],
+          until: now + cfg.effectTime * 1000,
+          seed: 1 + Math.floor(Math.random() * 1000000)
+        };
+      }
+      return;
+    }
+    case 'blindness': {
+      if (now < st.readyAt) return;
+      st.readyAt = now + cfg.cooldown * 1000;
+      st.activeUntil = now + cfg.duration * 1000;
+      // Every living hider on the map goes dark, however far away they are
+      for (const h of w.players.values()) {
+        if (h.role === 'hider' && h.spawned && r.hiders.has(h.sid)) h.blindUntil = now + cfg.duration * 1000;
+      }
       return;
     }
     case 'slingshot': {
@@ -203,6 +239,9 @@ function step(w, dt, now) {
   }
   w.rocks = keepRocks;
 
+  // Confusion Ray pulses only need to exist for a moment (for the seeker's animation)
+  if (w.rays) w.rays = w.rays.filter((ry) => now - ry.born < 1000);
+
   // Smoke clouds expire
   w.smokes = w.smokes.filter((s) => now < s.endAt);
 
@@ -264,6 +303,11 @@ function extras(w, p, now) {
       .map((t) => ({ x: Math.round(t.x), y: Math.round(t.y) }));
     out.cans = w.cans.map((c) => ({ id: c.id, x: Math.round(c.x), y: Math.round(c.y), a: HIDER_ITEMS.inkBomb.seekerOpacity }));
 
+    // The seeker's own Confusion Ray pulses (hiders never see these)
+    out.rays = (w.rays || [])
+      .filter((ry) => ry.owner === p.sid)
+      .map((ry) => ({ x: Math.round(ry.x), y: Math.round(ry.y), r: T.confusionRadius, age: (now - ry.born) / 1000 }));
+
     // Compass: points at the nearest real hider while active
     if (stateOf(p, 'compass').activeUntil > now) {
       let best = null;
@@ -278,8 +322,18 @@ function extras(w, p, now) {
     // Hiders see beartraps faintly and ink cans clearly
     out.traps = w.traps.map((t) => ({ id: t.id, x: Math.round(t.x), y: Math.round(t.y), a: SEEKER_ITEMS.beartrap.hiderOpacity }));
     out.cans = w.cans.map((c) => ({ id: c.id, x: Math.round(c.x), y: Math.round(c.y), a: 1 }));
+
+    // A hider hit by the Confusion Ray is told which effect they have
+    if (p.confusion && now < p.confusion.until) {
+      out.confusion = { type: p.confusion.type, left: r1((p.confusion.until - now) / 1000), seed: p.confusion.seed };
+    }
+
+    // A hider hit by Blindness is told how long it lasts
+    if (p.blindUntil && now < p.blindUntil && r.hiders.has(p.sid)) {
+      out.blind = { left: r1((p.blindUntil - now) / 1000), total: SEEKER_ITEMS.blindness.duration };
+    }
   }
   return out;
 }
 
-module.exports = { T, init, useItem, sling, step, extras, cloaked, holdingSling };
+module.exports = { T, init, useItem, sling, step, extras, cloaked, holdingSling, inverted };
