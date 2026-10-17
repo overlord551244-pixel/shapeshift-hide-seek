@@ -1,7 +1,8 @@
 // The real game view: camera, smooth movement, characters, controls and HUD
 (function () {
   const canvas = $('view');
-  const ctx = canvas.getContext('2d');
+  const rawCtx = canvas.getContext('2d');
+  let ctx = rawCtx;   // swapped for a color-scrambling version while a Confusion Ray effect is on you
 
   const BASE_H = 600;      // how many world units tall the view is
   const MAX_W = 1100;      // widest view allowed (keeps wide monitors fair)
@@ -30,6 +31,9 @@
   let lastMe = null;
   let lastFrame = performance.now();
   let playerScreen = { x: 400, y: 250 };
+  let rc = null;            // the color scrambler, while a Confusion Ray "colors" effect is on
+  let flipBuf = null;       // scratch canvas used to turn the view upside down
+  let flipCtx = null;
   const ents = new Map();   // smoothed position of everything on the map
   const mouse = { x: 400, y: 250 };
   const keys = { up: false, down: false, left: false, right: false, sprint: false };
@@ -88,8 +92,16 @@
     mouse.y = e.clientY - r.top;
   }
 
+  // True while a Confusion Ray has turned this player's view upside down
+  function isFlipped() {
+    return !!(state && state.confusion && state.confusion.type === 'flip');
+  }
+
+  // The direction (in the world) from the player toward the mouse
   function aimAngle() {
-    return Math.atan2(mouse.y - playerScreen.y, mouse.x - playerScreen.x);
+    const mx = isFlipped() ? VW - mouse.x : mouse.x;
+    const my = isFlipped() ? VH - mouse.y : mouse.y;
+    return Math.atan2(my - playerScreen.y, mx - playerScreen.x);
   }
 
   canvas.addEventListener('mousemove', setMouse);
@@ -120,6 +132,7 @@
     state = null;
     lastMe = null;
     myItems = [];
+    rc = null;
     ents.clear();
     Effects.reset();
     for (const k of Object.keys(keys)) keys[k] = false;
@@ -284,6 +297,25 @@
     ctx.stroke();
   }
 
+  // Turns everything drawn so far upside down (a 180 degree turn), before the HUD is drawn
+  function flipWorld() {
+    if (!flipBuf || flipBuf.width !== canvas.width || flipBuf.height !== canvas.height) {
+      flipBuf = document.createElement('canvas');
+      flipBuf.width = canvas.width;
+      flipBuf.height = canvas.height;
+      flipCtx = flipBuf.getContext('2d');
+    }
+    flipCtx.setTransform(1, 0, 0, 1, 0, 0);
+    flipCtx.globalCompositeOperation = 'copy';
+    flipCtx.drawImage(canvas, 0, 0);
+
+    rawCtx.save();
+    rawCtx.setTransform(-1, 0, 0, -1, canvas.width, canvas.height);
+    rawCtx.globalCompositeOperation = 'copy';
+    rawCtx.drawImage(flipBuf, 0, 0);
+    rawCtx.restore();
+  }
+
   function heart(x, y, s) {
     ctx.beginPath();
     ctx.moveTo(x, y + s * 0.3);
@@ -317,6 +349,7 @@
 
   function frame(now) {
     requestAnimationFrame(frame);
+    ctx = rawCtx;
     const dt = Math.min(0.1, (now - lastFrame) / 1000);
     lastFrame = now;
 
@@ -370,6 +403,13 @@
     playerScreen = { x: (ref.x - camX) * scale, y: (ref.y - camY) * scale };
     const aim = aimAngle();
 
+    // A hider hit by the Confusion Ray: colors get scrambled, or the screen gets flipped below
+    const conf = state.confusion || null;
+    if (conf && conf.type === 'colors') {
+      if (!rc || rc.seed !== conf.seed) rc = Effects.recolor(rawCtx, conf.seed);
+      ctx = rc.ctx;
+    }
+
     // World
     ctx.setTransform(DPR * scale, 0, 0, DPR * scale, -camX * scale * DPR, -camY * scale * DPR);
     drawGround(camX, camY, viewW, viewH, now);
@@ -387,13 +427,23 @@
     }
     list.sort((a, b) => a.sy - b.sy);
     for (const it of list) {
-      if (it.ent) drawEntity(it.ent, now, aim);
-      else MapRender.drawObject(ctx, it.obj, now);
+      if (it.ent) {
+        if (rc && ctx !== rawCtx) rc.setSalt(it.ent.id);   // every character gets its own random colors
+        drawEntity(it.ent, now, aim);
+      } else {
+        if (rc && ctx !== rawCtx) rc.setSalt(0);
+        MapRender.drawObject(ctx, it.obj, now);
+      }
     }
+    if (rc && ctx !== rawCtx) rc.setSalt(0);
 
     if (meD && state.alive) drawSelfMarker(meD, now);
     drawSlingAim(ref, aim);
     Effects.over(ctx, state, Math.min(0.15, (now - stateAt) / 1000), info, ref, now);
+
+    // Back to normal drawing for everything on top of the world
+    ctx = rawCtx;
+    if (conf && conf.type === 'flip') flipWorld();
 
     // Screen
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -425,7 +475,12 @@
       ctx.stroke();
     }
 
-    Effects.screen(ctx, state, VW, VH, now, { x: camX, y: camY, scale: scale }, mouse);
+    // Where the player's character appears on the screen (turned around when the view is flipped)
+    const center = (conf && conf.type === 'flip')
+      ? { x: VW - playerScreen.x, y: VH - playerScreen.y }
+      : playerScreen;
+
+    Effects.screen(ctx, state, VW, VH, now, { x: camX, y: camY, scale: scale }, mouse, center);
 
     if (!state.alive) {
       centerText(
